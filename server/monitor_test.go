@@ -233,6 +233,21 @@ func TestMonitorServerz(t *testing.T) {
 	if sz.TotalBytes != totalBytes {
 		t.Fatalf("Expected %v bytes, got %v", totalBytes, sz.TotalBytes)
 	}
+	if runtime.GOOS == "linux" {
+		if sz.OpenFDs == 0 {
+			t.Fatalf("Expected more than 0 open files, got %v", sz.OpenFDs)
+		}
+		if sz.MaxFDs == 0 {
+			t.Fatalf("Expected open files limit to be bigger than 0, got %v", sz.MaxFDs)
+		}
+	} else {
+		if sz.OpenFDs != 0 {
+			t.Fatalf("Expected 0 open files, got %v", sz.OpenFDs)
+		}
+		if sz.MaxFDs != 0 {
+			t.Fatalf("Expected open files limit to 0, got %v", sz.MaxFDs)
+		}
+	}
 	resp.Body.Close()
 
 	if err := sub.Unsubscribe(); err != nil {

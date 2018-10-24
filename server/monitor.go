@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"runtime"
 	"sort"
 	"strconv"
@@ -25,6 +26,7 @@ import (
 
 	gnatsd "github.com/nats-io/gnatsd/server"
 	"github.com/nats-io/nats-streaming-server/stores"
+	"github.com/prometheus/procfs"
 )
 
 // Routes for the monitoring pages
@@ -53,6 +55,8 @@ type Serverz struct {
 	Channels      int       `json:"channels"`
 	TotalMsgs     int       `json:"total_msgs"`
 	TotalBytes    uint64    `json:"total_bytes"`
+	OpenFDs       int       `json:"open_fds"`
+	MaxFDs        int       `json:"max_fds"`
 }
 
 // Storez describes the NATS Streaming Store
@@ -187,6 +191,25 @@ func (s *StanServer) handleServerz(w http.ResponseWriter, r *http.Request) {
 	numSubs := s.numSubs
 	s.monMu.RUnlock()
 	now := time.Now()
+	pid := os.Getpid()
+	fds := 0
+	maxFDs := 0
+
+	p, err := procfs.NewProc(pid)
+	if err == nil {
+		fds, err = p.FileDescriptorsLen()
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error getting file descriptors len: %v", err), http.StatusInternalServerError)
+			return
+		}
+		limits, err := p.NewLimits()
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error getting process limits: %v", err), http.StatusInternalServerError)
+			return
+		}
+		maxFDs = limits.OpenFiles
+	}
+
 	serverz := &Serverz{
 		ClusterID:     s.info.ClusterID,
 		ServerID:      s.serverID,
@@ -201,6 +224,8 @@ func (s *StanServer) handleServerz(w http.ResponseWriter, r *http.Request) {
 		Subscriptions: numSubs,
 		TotalMsgs:     count,
 		TotalBytes:    bytes,
+		OpenFDs:       fds,
+		MaxFDs:        maxFDs,
 	}
 	s.sendResponse(w, r, serverz)
 }
